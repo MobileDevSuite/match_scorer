@@ -47,6 +47,11 @@ class PlayerPosition(str, Enum):
     MIDFIELDER = "midfielder"
     FORWARD = "forward"
 
+class PenaltyResult(str, Enum):
+    SCORED = "scored"
+    MISSED = "missed"
+    SAVED = "saved"
+
 # Player Model
 class Player(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -87,6 +92,8 @@ class MatchEvent(BaseModel):
     player_name: Optional[str] = None
     player_out: Optional[str] = None  # For substitutions
     player_in: Optional[str] = None   # For substitutions
+    penalty_result: Optional[PenaltyResult] = None  # For penalties: scored, missed, saved
+    goalkeeper_name: Optional[str] = None  # Goalkeeper who saved the penalty
     notes: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
@@ -97,6 +104,8 @@ class MatchEventCreate(BaseModel):
     player_name: Optional[str] = None
     player_out: Optional[str] = None
     player_in: Optional[str] = None
+    penalty_result: Optional[PenaltyResult] = None
+    goalkeeper_name: Optional[str] = None
     notes: Optional[str] = None
 
 class Match(BaseModel):
@@ -112,6 +121,14 @@ class Match(BaseModel):
     away_corners: int = 0
     home_penalties: int = 0
     away_penalties: int = 0
+    home_penalties_scored: int = 0
+    away_penalties_scored: int = 0
+    home_penalties_missed: int = 0
+    away_penalties_missed: int = 0
+    home_penalties_saved: int = 0
+    away_penalties_saved: int = 0
+    home_goalkeeper_saves: int = 0  # Saves by home team goalkeeper
+    away_goalkeeper_saves: int = 0  # Saves by away team goalkeeper
     home_substitutions: int = 0
     away_substitutions: int = 0
     home_yellow_cards: int = 0
@@ -204,9 +221,22 @@ async def add_event(match_id: str, event_input: MatchEventCreate):
     if event_input.event_type == EventType.GOAL:
         update_fields[f"{team_prefix}score"] = match[f"{team_prefix}score"] + 1
     elif event_input.event_type == EventType.PENALTY:
-        update_fields[f"{team_prefix}penalties"] = match[f"{team_prefix}penalties"] + 1
-        # Penalties also count as goals in the score
-        update_fields[f"{team_prefix}score"] = match[f"{team_prefix}score"] + 1
+        update_fields[f"{team_prefix}penalties"] = match.get(f"{team_prefix}penalties", 0) + 1
+        
+        # Handle penalty result
+        penalty_result = event_input.penalty_result or PenaltyResult.SCORED
+        
+        if penalty_result == PenaltyResult.SCORED:
+            update_fields[f"{team_prefix}penalties_scored"] = match.get(f"{team_prefix}penalties_scored", 0) + 1
+            # Scored penalties count as goals
+            update_fields[f"{team_prefix}score"] = match[f"{team_prefix}score"] + 1
+        elif penalty_result == PenaltyResult.MISSED:
+            update_fields[f"{team_prefix}penalties_missed"] = match.get(f"{team_prefix}penalties_missed", 0) + 1
+        elif penalty_result == PenaltyResult.SAVED:
+            update_fields[f"{team_prefix}penalties_saved"] = match.get(f"{team_prefix}penalties_saved", 0) + 1
+            # Add save to opposing team's goalkeeper
+            opposing_prefix = "away_" if event_input.team == "home" else "home_"
+            update_fields[f"{opposing_prefix}goalkeeper_saves"] = match.get(f"{opposing_prefix}goalkeeper_saves", 0) + 1
     elif event_input.event_type == EventType.CORNER:
         update_fields[f"{team_prefix}corners"] = match[f"{team_prefix}corners"] + 1
     elif event_input.event_type == EventType.SUBSTITUTION:
@@ -251,9 +281,22 @@ async def remove_event(match_id: str, event_id: str):
     if event_type == "goal":
         update_fields[f"{team_prefix}score"] = max(0, match[f"{team_prefix}score"] - 1)
     elif event_type == "penalty":
-        update_fields[f"{team_prefix}penalties"] = max(0, match[f"{team_prefix}penalties"] - 1)
-        # Penalties also count as goals, so subtract from score too
-        update_fields[f"{team_prefix}score"] = max(0, match[f"{team_prefix}score"] - 1)
+        update_fields[f"{team_prefix}penalties"] = max(0, match.get(f"{team_prefix}penalties", 0) - 1)
+        
+        # Handle penalty result when deleting
+        penalty_result = event_to_remove.get("penalty_result", "scored")
+        
+        if penalty_result == "scored":
+            update_fields[f"{team_prefix}penalties_scored"] = max(0, match.get(f"{team_prefix}penalties_scored", 0) - 1)
+            # Subtract from score too
+            update_fields[f"{team_prefix}score"] = max(0, match[f"{team_prefix}score"] - 1)
+        elif penalty_result == "missed":
+            update_fields[f"{team_prefix}penalties_missed"] = max(0, match.get(f"{team_prefix}penalties_missed", 0) - 1)
+        elif penalty_result == "saved":
+            update_fields[f"{team_prefix}penalties_saved"] = max(0, match.get(f"{team_prefix}penalties_saved", 0) - 1)
+            # Subtract save from opposing goalkeeper
+            opposing_prefix = "away_" if event_to_remove["team"] == "home" else "home_"
+            update_fields[f"{opposing_prefix}goalkeeper_saves"] = max(0, match.get(f"{opposing_prefix}goalkeeper_saves", 0) - 1)
     elif event_type == "corner":
         update_fields[f"{team_prefix}corners"] = max(0, match[f"{team_prefix}corners"] - 1)
     elif event_type == "substitution":

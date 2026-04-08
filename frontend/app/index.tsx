@@ -23,6 +23,7 @@ type EventType = 'goal' | 'penalty' | 'corner' | 'substitution' | 'yellow_card' 
 type MatchStatus = 'not_started' | 'first_half' | 'half_time' | 'second_half' | 'finished';
 type TeamSide = 'home' | 'away';
 type PlayerPosition = 'goalkeeper' | 'defender' | 'midfielder' | 'forward';
+type PenaltyResult = 'scored' | 'missed' | 'saved';
 
 interface Player {
   id: string;
@@ -45,6 +46,8 @@ interface MatchEvent {
   player_name?: string;
   player_out?: string;
   player_in?: string;
+  penalty_result?: PenaltyResult;
+  goalkeeper_name?: string;
   notes?: string;
   timestamp: string;
 }
@@ -62,6 +65,14 @@ interface Match {
   away_corners: number;
   home_penalties: number;
   away_penalties: number;
+  home_penalties_scored?: number;
+  away_penalties_scored?: number;
+  home_penalties_missed?: number;
+  away_penalties_missed?: number;
+  home_penalties_saved?: number;
+  away_penalties_saved?: number;
+  home_goalkeeper_saves?: number;
+  away_goalkeeper_saves?: number;
   home_substitutions: number;
   away_substitutions: number;
   home_yellow_cards: number;
@@ -109,6 +120,11 @@ export default function Index() {
   const [showPlayerInPicker, setShowPlayerInPicker] = useState(false);
   const [homeTeamPlayers, setHomeTeamPlayers] = useState<Player[]>([]);
   const [awayTeamPlayers, setAwayTeamPlayers] = useState<Player[]>([]);
+  
+  // Penalty specific state
+  const [penaltyResult, setPenaltyResult] = useState<PenaltyResult>('scored');
+  const [goalkeeperName, setGoalkeeperName] = useState('');
+  const [showGoalkeeperPicker, setShowGoalkeeperPicker] = useState(false);
   
   // Timer state
   const [timerMinutes, setTimerMinutes] = useState(0);
@@ -476,6 +492,12 @@ export default function Index() {
       if (selectedEventType === 'substitution') {
         eventData.player_out = playerOut;
         eventData.player_in = playerIn;
+      } else if (selectedEventType === 'penalty') {
+        eventData.player_name = playerName;
+        eventData.penalty_result = penaltyResult;
+        if (penaltyResult === 'saved' && goalkeeperName) {
+          eventData.goalkeeper_name = goalkeeperName;
+        }
       } else if (playerName) {
         eventData.player_name = playerName;
       }
@@ -554,7 +576,7 @@ export default function Index() {
     );
   };
 
-  const openEventModal = (eventType: EventType, team: Team) => {
+  const openEventModal = (eventType: EventType, team: TeamSide) => {
     setSelectedEventType(eventType);
     setSelectedTeam(team);
     // Auto-fill with current timer minutes
@@ -562,6 +584,8 @@ export default function Index() {
     setPlayerName('');
     setPlayerOut('');
     setPlayerIn('');
+    setPenaltyResult('scored');
+    setGoalkeeperName('');
     setShowEventModal(true);
   };
 
@@ -572,6 +596,8 @@ export default function Index() {
     setPlayerName('');
     setPlayerOut('');
     setPlayerIn('');
+    setPenaltyResult('scored');
+    setGoalkeeperName('');
   };
 
   const getEventIcon = (eventType: EventType): keyof typeof Ionicons.glyphMap => {
@@ -1425,6 +1451,79 @@ export default function Index() {
                   <Ionicons name="chevron-down" size={20} color="#888" />
                 </TouchableOpacity>
               </>
+            ) : selectedEventType === 'penalty' ? (
+              <>
+                <Text style={styles.inputLabel}>Jugador que cobra:</Text>
+                <TouchableOpacity
+                  style={styles.teamSelector}
+                  onPress={() => setShowPlayerPicker(true)}
+                >
+                  <Text style={playerName ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                    {playerName || 'Seleccionar jugador'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#888" />
+                </TouchableOpacity>
+                
+                <Text style={styles.inputLabel}>Resultado:</Text>
+                <View style={styles.penaltyResultButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.penaltyResultButton,
+                      penaltyResult === 'scored' && styles.penaltyResultButtonActive,
+                      penaltyResult === 'scored' && { backgroundColor: '#4CAF50' }
+                    ]}
+                    onPress={() => setPenaltyResult('scored')}
+                  >
+                    <Ionicons name="checkmark-circle" size={20} color={penaltyResult === 'scored' ? '#fff' : '#4CAF50'} />
+                    <Text style={[styles.penaltyResultText, penaltyResult === 'scored' && { color: '#fff' }]}>
+                      Anotado
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.penaltyResultButton,
+                      penaltyResult === 'missed' && styles.penaltyResultButtonActive,
+                      penaltyResult === 'missed' && { backgroundColor: '#FF9800' }
+                    ]}
+                    onPress={() => setPenaltyResult('missed')}
+                  >
+                    <Ionicons name="close-circle" size={20} color={penaltyResult === 'missed' ? '#fff' : '#FF9800'} />
+                    <Text style={[styles.penaltyResultText, penaltyResult === 'missed' && { color: '#fff' }]}>
+                      Fallado
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.penaltyResultButton,
+                      penaltyResult === 'saved' && styles.penaltyResultButtonActive,
+                      penaltyResult === 'saved' && { backgroundColor: '#2196F3' }
+                    ]}
+                    onPress={() => setPenaltyResult('saved')}
+                  >
+                    <Ionicons name="hand-left" size={20} color={penaltyResult === 'saved' ? '#fff' : '#2196F3'} />
+                    <Text style={[styles.penaltyResultText, penaltyResult === 'saved' && { color: '#fff' }]}>
+                      Atajado
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {penaltyResult === 'saved' && (
+                  <>
+                    <Text style={styles.inputLabel}>Portero que atajó:</Text>
+                    <TouchableOpacity
+                      style={styles.teamSelector}
+                      onPress={() => setShowGoalkeeperPicker(true)}
+                    >
+                      <Text style={goalkeeperName ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                        {goalkeeperName || 'Seleccionar portero'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={20} color="#888" />
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
             ) : selectedEventType !== 'corner' ? (
               <>
                 <Text style={styles.inputLabel}>Jugador:</Text>
@@ -1546,6 +1645,59 @@ export default function Index() {
                 setShowPlayerOutPicker(false);
                 setShowPlayerInPicker(false);
               }}
+            >
+              <Text style={styles.modalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Goalkeeper Picker Modal */}
+      <Modal visible={showGoalkeeperPicker} animationType="slide" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.pickerModalContent}>
+            <Text style={styles.modalTitle}>Seleccionar Portero</Text>
+            <Text style={styles.modalSubtitle}>
+              Equipo {selectedTeam === 'home' ? currentMatch?.away_team : currentMatch?.home_team}
+            </Text>
+            <ScrollView style={styles.pickerList}>
+              {(() => {
+                // Get goalkeepers from the OPPOSING team
+                const opposingPlayers = selectedTeam === 'home' ? awayTeamPlayers : homeTeamPlayers;
+                const goalkeepers = opposingPlayers.filter(p => p.position === 'goalkeeper');
+                
+                if (goalkeepers.length === 0) {
+                  return (
+                    <View style={styles.emptyPicker}>
+                      <Ionicons name="alert-circle" size={32} color="#FF9800" />
+                      <Text style={styles.emptyPickerText}>No hay porteros registrados en el equipo contrario</Text>
+                    </View>
+                  );
+                }
+                
+                return goalkeepers.map((player) => (
+                  <TouchableOpacity
+                    key={player.id}
+                    style={styles.playerPickerItem}
+                    onPress={() => {
+                      setGoalkeeperName(`#${player.number} ${player.name}`);
+                      setShowGoalkeeperPicker(false);
+                    }}
+                  >
+                    <View style={[styles.playerPickerNumber, { backgroundColor: '#FF9800' }]}>
+                      <Text style={styles.playerPickerNumberText}>{player.number}</Text>
+                    </View>
+                    <View style={styles.playerPickerInfo}>
+                      <Text style={styles.playerPickerName}>{player.name}</Text>
+                      <Text style={styles.playerPickerPosition}>Portero</Text>
+                    </View>
+                  </TouchableOpacity>
+                ));
+              })()}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 12 }]}
+              onPress={() => setShowGoalkeeperPicker(false)}
             >
               <Text style={styles.modalButtonText}>Cancelar</Text>
             </TouchableOpacity>
@@ -2347,5 +2499,30 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 12,
     marginTop: 2,
+  },
+  // Penalty result buttons
+  penaltyResultButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  penaltyResultButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#0f3460',
+    gap: 6,
+  },
+  penaltyResultButtonActive: {
+    borderWidth: 0,
+  },
+  penaltyResultText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
