@@ -41,6 +41,43 @@ class MatchStatus(str, Enum):
     SECOND_HALF = "second_half"
     FINISHED = "finished"
 
+class PlayerPosition(str, Enum):
+    GOALKEEPER = "goalkeeper"
+    DEFENDER = "defender"
+    MIDFIELDER = "midfielder"
+    FORWARD = "forward"
+
+# Player Model
+class Player(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    number: int
+    position: PlayerPosition
+    
+class PlayerCreate(BaseModel):
+    name: str
+    number: int
+    position: PlayerPosition
+
+class PlayerUpdate(BaseModel):
+    name: Optional[str] = None
+    number: Optional[int] = None
+    position: Optional[PlayerPosition] = None
+
+# Team Model
+class Team(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    players: List[Player] = []
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class TeamCreate(BaseModel):
+    name: str
+
+class TeamUpdate(BaseModel):
+    name: Optional[str] = None
+
 # Models
 class MatchEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -325,6 +362,142 @@ async def get_match_summary(match_id: str):
         },
         "total_events": len(match_obj.events)
     }
+
+# ==================== TEAM ROUTES ====================
+
+@api_router.post("/teams", response_model=Team)
+async def create_team(team_input: TeamCreate):
+    # Check if team already exists
+    existing = await db.teams.find_one({"name": team_input.name})
+    if existing:
+        raise HTTPException(status_code=400, detail="Team with this name already exists")
+    
+    team = Team(name=team_input.name)
+    await db.teams.insert_one(team.dict())
+    return team
+
+@api_router.get("/teams", response_model=List[Team])
+async def get_teams():
+    teams = await db.teams.find().sort("name", 1).to_list(100)
+    return [Team(**team) for team in teams]
+
+@api_router.get("/teams/{team_id}", response_model=Team)
+async def get_team(team_id: str):
+    team = await db.teams.find_one({"id": team_id})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return Team(**team)
+
+@api_router.get("/teams/by-name/{team_name}", response_model=Team)
+async def get_team_by_name(team_name: str):
+    team = await db.teams.find_one({"name": team_name})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return Team(**team)
+
+@api_router.patch("/teams/{team_id}", response_model=Team)
+async def update_team(team_id: str, team_update: TeamUpdate):
+    team = await db.teams.find_one({"id": team_id})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    update_data = {k: v for k, v in team_update.dict().items() if v is not None}
+    update_data["updated_at"] = datetime.utcnow()
+    
+    await db.teams.update_one({"id": team_id}, {"$set": update_data})
+    updated_team = await db.teams.find_one({"id": team_id})
+    return Team(**updated_team)
+
+@api_router.delete("/teams/{team_id}")
+async def delete_team(team_id: str):
+    result = await db.teams.delete_one({"id": team_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return {"message": "Team deleted successfully"}
+
+# ==================== PLAYER ROUTES ====================
+
+@api_router.post("/teams/{team_id}/players", response_model=Team)
+async def add_player_to_team(team_id: str, player_input: PlayerCreate):
+    team = await db.teams.find_one({"id": team_id})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Check if number is already taken in this team
+    for p in team.get("players", []):
+        if p["number"] == player_input.number:
+            raise HTTPException(status_code=400, detail=f"Number {player_input.number} is already taken")
+    
+    player = Player(**player_input.dict())
+    
+    await db.teams.update_one(
+        {"id": team_id},
+        {
+            "$push": {"players": player.dict()},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+    
+    updated_team = await db.teams.find_one({"id": team_id})
+    return Team(**updated_team)
+
+@api_router.patch("/teams/{team_id}/players/{player_id}", response_model=Team)
+async def update_player(team_id: str, player_id: str, player_update: PlayerUpdate):
+    team = await db.teams.find_one({"id": team_id})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Find and update the player
+    players = team.get("players", [])
+    player_found = False
+    
+    for i, p in enumerate(players):
+        if p["id"] == player_id:
+            player_found = True
+            if player_update.name is not None:
+                players[i]["name"] = player_update.name
+            if player_update.number is not None:
+                # Check if new number is taken by another player
+                for j, other in enumerate(players):
+                    if j != i and other["number"] == player_update.number:
+                        raise HTTPException(status_code=400, detail=f"Number {player_update.number} is already taken")
+                players[i]["number"] = player_update.number
+            if player_update.position is not None:
+                players[i]["position"] = player_update.position
+            break
+    
+    if not player_found:
+        raise HTTPException(status_code=404, detail="Player not found")
+    
+    await db.teams.update_one(
+        {"id": team_id},
+        {
+            "$set": {
+                "players": players,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    updated_team = await db.teams.find_one({"id": team_id})
+    return Team(**updated_team)
+
+@api_router.delete("/teams/{team_id}/players/{player_id}", response_model=Team)
+async def remove_player_from_team(team_id: str, player_id: str):
+    team = await db.teams.find_one({"id": team_id})
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    await db.teams.update_one(
+        {"id": team_id},
+        {
+            "$pull": {"players": {"id": player_id}},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+    
+    updated_team = await db.teams.find_one({"id": team_id})
+    return Team(**updated_team)
 
 # Include the router in the main app
 app.include_router(api_router)

@@ -21,12 +21,26 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 type EventType = 'goal' | 'penalty' | 'corner' | 'substitution' | 'yellow_card' | 'red_card';
 type MatchStatus = 'not_started' | 'first_half' | 'half_time' | 'second_half' | 'finished';
-type Team = 'home' | 'away';
+type TeamSide = 'home' | 'away';
+type PlayerPosition = 'goalkeeper' | 'defender' | 'midfielder' | 'forward';
+
+interface Player {
+  id: string;
+  name: string;
+  number: number;
+  position: PlayerPosition;
+}
+
+interface Team {
+  id: string;
+  name: string;
+  players: Player[];
+}
 
 interface MatchEvent {
   id: string;
   event_type: EventType;
-  team: Team;
+  team: TeamSide;
   minute: number;
   player_name?: string;
   player_out?: string;
@@ -57,7 +71,7 @@ interface Match {
   events: MatchEvent[];
 }
 
-type Screen = 'home' | 'match' | 'summary';
+type Screen = 'home' | 'match' | 'summary' | 'teams' | 'team_detail';
 
 export default function Index() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -66,19 +80,35 @@ export default function Index() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
+  // Teams state
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
+  const [showNewTeamModal, setShowNewTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [showNewPlayerModal, setShowNewPlayerModal] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerNumber, setNewPlayerNumber] = useState('');
+  const [newPlayerPosition, setNewPlayerPosition] = useState<PlayerPosition>('midfielder');
+  
   // New match modal
   const [showNewMatchModal, setShowNewMatchModal] = useState(false);
   const [homeTeam, setHomeTeam] = useState('');
   const [awayTeam, setAwayTeam] = useState('');
+  const [showTeamPicker, setShowTeamPicker] = useState<'home' | 'away' | null>(null);
   
   // Event modal
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEventType, setSelectedEventType] = useState<EventType | null>(null);
-  const [selectedTeam, setSelectedTeam] = useState<Team>('home');
+  const [selectedTeam, setSelectedTeam] = useState<TeamSide>('home');
   const [eventMinute, setEventMinute] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [playerOut, setPlayerOut] = useState('');
   const [playerIn, setPlayerIn] = useState('');
+  const [showPlayerPicker, setShowPlayerPicker] = useState(false);
+  const [showPlayerOutPicker, setShowPlayerOutPicker] = useState(false);
+  const [showPlayerInPicker, setShowPlayerInPicker] = useState(false);
+  const [homeTeamPlayers, setHomeTeamPlayers] = useState<Player[]>([]);
+  const [awayTeamPlayers, setAwayTeamPlayers] = useState<Player[]>([]);
   
   // Timer state
   const [timerMinutes, setTimerMinutes] = useState(0);
@@ -98,6 +128,30 @@ export default function Index() {
     }
   }, []);
 
+  const fetchTeams = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/teams`);
+      if (response.ok) {
+        const data = await response.json();
+        setTeams(data);
+      }
+    } catch (error) {
+      console.error('Error fetching teams:', error);
+    }
+  }, []);
+
+  const fetchTeamByName = useCallback(async (teamName: string): Promise<Team | null> => {
+    try {
+      const response = await fetch(`${API_URL}/api/teams/by-name/${encodeURIComponent(teamName)}`);
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (error) {
+      console.error('Error fetching team:', error);
+    }
+    return null;
+  }, []);
+
   const fetchMatch = useCallback(async (matchId: string) => {
     try {
       setLoading(true);
@@ -105,17 +159,24 @@ export default function Index() {
       if (response.ok) {
         const data = await response.json();
         setCurrentMatch(data);
+        
+        // Load players for both teams
+        const homeTeamData = await fetchTeamByName(data.home_team);
+        const awayTeamData = await fetchTeamByName(data.away_team);
+        setHomeTeamPlayers(homeTeamData?.players || []);
+        setAwayTeamPlayers(awayTeamData?.players || []);
       }
     } catch (error) {
       console.error('Error fetching match:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchTeamByName]);
 
   useEffect(() => {
     fetchMatches();
-  }, [fetchMatches]);
+    fetchTeams();
+  }, [fetchMatches, fetchTeams]);
 
   // Timer effect
   useEffect(() => {
@@ -188,12 +249,160 @@ export default function Index() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchMatches();
+    await fetchTeams();
     setRefreshing(false);
-  }, [fetchMatches]);
+  }, [fetchMatches, fetchTeams]);
+
+  // Team management functions
+  const createTeam = async () => {
+    if (!newTeamName.trim()) {
+      Alert.alert('Error', 'Por favor ingresa el nombre del equipo');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/api/teams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newTeamName.trim() }),
+      });
+      
+      if (response.ok) {
+        const newTeam = await response.json();
+        setShowNewTeamModal(false);
+        setNewTeamName('');
+        fetchTeams();
+        setCurrentTeam(newTeam);
+        setScreen('team_detail');
+      } else {
+        const error = await response.json();
+        Alert.alert('Error', error.detail || 'No se pudo crear el equipo');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo crear el equipo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addPlayer = async () => {
+    if (!currentTeam || !newPlayerName.trim() || !newPlayerNumber) {
+      Alert.alert('Error', 'Por favor completa todos los campos');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/api/teams/${currentTeam.id}/players`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newPlayerName.trim(),
+          number: parseInt(newPlayerNumber, 10),
+          position: newPlayerPosition,
+        }),
+      });
+      
+      if (response.ok) {
+        const updatedTeam = await response.json();
+        setCurrentTeam(updatedTeam);
+        setShowNewPlayerModal(false);
+        setNewPlayerName('');
+        setNewPlayerNumber('');
+        setNewPlayerPosition('midfielder');
+        fetchTeams();
+      } else {
+        const error = await response.json();
+        Alert.alert('Error', error.detail || 'No se pudo agregar el jugador');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo agregar el jugador');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deletePlayer = async (playerId: string) => {
+    if (!currentTeam) return;
+    
+    Alert.alert(
+      'Confirmar',
+      '¿Eliminar este jugador?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(
+                `${API_URL}/api/teams/${currentTeam.id}/players/${playerId}`,
+                { method: 'DELETE' }
+              );
+              if (response.ok) {
+                const updatedTeam = await response.json();
+                setCurrentTeam(updatedTeam);
+                fetchTeams();
+              }
+            } catch (error) {
+              Alert.alert('Error', 'No se pudo eliminar el jugador');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const deleteTeam = async (teamId: string) => {
+    Alert.alert(
+      'Confirmar',
+      '¿Eliminar este equipo y todos sus jugadores?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await fetch(`${API_URL}/api/teams/${teamId}`, { method: 'DELETE' });
+              fetchTeams();
+              if (currentTeam?.id === teamId) {
+                setCurrentTeam(null);
+                setScreen('teams');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'No se pudo eliminar el equipo');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const getPositionLabel = (position: PlayerPosition): string => {
+    switch (position) {
+      case 'goalkeeper': return 'Portero';
+      case 'defender': return 'Defensa';
+      case 'midfielder': return 'Mediocampista';
+      case 'forward': return 'Delantero';
+      default: return position;
+    }
+  };
+
+  const getPositionColor = (position: PlayerPosition): string => {
+    switch (position) {
+      case 'goalkeeper': return '#FF9800';
+      case 'defender': return '#2196F3';
+      case 'midfielder': return '#4CAF50';
+      case 'forward': return '#F44336';
+      default: return '#666';
+    }
+  };
 
   const createMatch = async () => {
     if (!homeTeam.trim() || !awayTeam.trim()) {
-      Alert.alert('Error', 'Por favor ingresa ambos equipos');
+      Alert.alert('Error', 'Por favor selecciona ambos equipos');
       return;
     }
     
@@ -210,6 +419,13 @@ export default function Index() {
       
       if (response.ok) {
         const newMatch = await response.json();
+        
+        // Load players for both teams
+        const homeTeamData = await fetchTeamByName(homeTeam.trim());
+        const awayTeamData = await fetchTeamByName(awayTeam.trim());
+        setHomeTeamPlayers(homeTeamData?.players || []);
+        setAwayTeamPlayers(awayTeamData?.players || []);
+        
         setCurrentMatch(newMatch);
         setShowNewMatchModal(false);
         setHomeTeam('');
@@ -410,6 +626,9 @@ export default function Index() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Partidos</Text>
+        <TouchableOpacity onPress={() => setScreen('teams')} style={styles.headerButton}>
+          <Ionicons name="people" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
       
       <ScrollView
@@ -430,7 +649,7 @@ export default function Index() {
               key={match.id}
               style={styles.matchCard}
               onPress={() => {
-                setCurrentMatch(match);
+                fetchMatch(match.id);
                 setScreen('match');
               }}
               onLongPress={() => deleteMatch(match.id)}
@@ -786,11 +1005,146 @@ export default function Index() {
     );
   };
 
+  // Teams Screen
+  const renderTeamsScreen = () => (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => setScreen('home')} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Equipos</Text>
+        <View style={{ width: 40 }} />
+      </View>
+      
+      <ScrollView
+        style={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />
+        }
+      >
+        {teams.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="people-outline" size={64} color="#666" />
+            <Text style={styles.emptyText}>No hay equipos</Text>
+            <Text style={styles.emptySubtext}>Crea un equipo para agregar jugadores</Text>
+          </View>
+        ) : (
+          teams.map((team) => (
+            <TouchableOpacity
+              key={team.id}
+              style={styles.teamCard}
+              onPress={() => {
+                setCurrentTeam(team);
+                setScreen('team_detail');
+              }}
+              onLongPress={() => deleteTeam(team.id)}
+            >
+              <View style={styles.teamCardContent}>
+                <Ionicons name="shield" size={32} color="#4CAF50" />
+                <View style={styles.teamCardInfo}>
+                  <Text style={styles.teamCardName}>{team.name}</Text>
+                  <Text style={styles.teamCardPlayers}>
+                    {team.players.length} jugador{team.players.length !== 1 ? 'es' : ''}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="#666" />
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+      
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setShowNewTeamModal(true)}
+      >
+        <Ionicons name="add" size={32} color="#fff" />
+      </TouchableOpacity>
+    </SafeAreaView>
+  );
+
+  // Team Detail Screen
+  const renderTeamDetailScreen = () => {
+    if (!currentTeam) return null;
+    
+    const groupedPlayers = {
+      goalkeeper: currentTeam.players.filter(p => p.position === 'goalkeeper'),
+      defender: currentTeam.players.filter(p => p.position === 'defender'),
+      midfielder: currentTeam.players.filter(p => p.position === 'midfielder'),
+      forward: currentTeam.players.filter(p => p.position === 'forward'),
+    };
+    
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => setScreen('teams')} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{currentTeam.name}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        <ScrollView style={styles.content}>
+          <View style={styles.teamHeader}>
+            <Ionicons name="shield" size={64} color="#4CAF50" />
+            <Text style={styles.teamHeaderName}>{currentTeam.name}</Text>
+            <Text style={styles.teamHeaderCount}>
+              {currentTeam.players.length} jugador{currentTeam.players.length !== 1 ? 'es' : ''}
+            </Text>
+          </View>
+          
+          {(['goalkeeper', 'defender', 'midfielder', 'forward'] as PlayerPosition[]).map((position) => (
+            groupedPlayers[position].length > 0 && (
+              <View key={position} style={styles.positionSection}>
+                <View style={[styles.positionHeader, { backgroundColor: getPositionColor(position) }]}>
+                  <Text style={styles.positionTitle}>{getPositionLabel(position)}s</Text>
+                </View>
+                {groupedPlayers[position]
+                  .sort((a, b) => a.number - b.number)
+                  .map((player) => (
+                    <TouchableOpacity
+                      key={player.id}
+                      style={styles.playerCard}
+                      onLongPress={() => deletePlayer(player.id)}
+                    >
+                      <View style={styles.playerNumber}>
+                        <Text style={styles.playerNumberText}>{player.number}</Text>
+                      </View>
+                      <Text style={styles.playerName}>{player.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+              </View>
+            )
+          ))}
+          
+          {currentTeam.players.length === 0 && (
+            <View style={styles.emptyState}>
+              <Ionicons name="person-outline" size={48} color="#666" />
+              <Text style={styles.emptyText}>Sin jugadores</Text>
+              <Text style={styles.emptySubtext}>Agrega jugadores al equipo</Text>
+            </View>
+          )}
+          
+          <View style={{ height: 100 }} />
+        </ScrollView>
+        
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setShowNewPlayerModal(true)}
+        >
+          <Ionicons name="person-add" size={28} color="#fff" />
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  };
+
   return (
     <View style={styles.app}>
       {screen === 'home' && renderHomeScreen()}
       {screen === 'match' && renderMatchScreen()}
       {screen === 'summary' && renderSummaryScreen()}
+      {screen === 'teams' && renderTeamsScreen()}
+      {screen === 'team_detail' && renderTeamDetailScreen()}
       
       {/* New Match Modal */}
       <Modal visible={showNewMatchModal} animationType="slide" transparent>
@@ -801,21 +1155,27 @@ export default function Index() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Nuevo Partido</Text>
             
-            <TextInput
-              style={styles.input}
-              placeholder="Equipo Local"
-              placeholderTextColor="#999"
-              value={homeTeam}
-              onChangeText={setHomeTeam}
-            />
+            <Text style={styles.inputLabel}>Equipo Local</Text>
+            <TouchableOpacity
+              style={styles.teamSelector}
+              onPress={() => setShowTeamPicker('home')}
+            >
+              <Text style={homeTeam ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                {homeTeam || 'Seleccionar equipo'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#888" />
+            </TouchableOpacity>
             
-            <TextInput
-              style={styles.input}
-              placeholder="Equipo Visitante"
-              placeholderTextColor="#999"
-              value={awayTeam}
-              onChangeText={setAwayTeam}
-            />
+            <Text style={styles.inputLabel}>Equipo Visitante</Text>
+            <TouchableOpacity
+              style={styles.teamSelector}
+              onPress={() => setShowTeamPicker('away')}
+            >
+              <Text style={awayTeam ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                {awayTeam || 'Seleccionar equipo'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#888" />
+            </TouchableOpacity>
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -838,6 +1198,176 @@ export default function Index() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.modalButtonText}>Crear</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      
+      {/* Team Picker Modal */}
+      <Modal visible={showTeamPicker !== null} animationType="slide" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.pickerModalContent}>
+            <Text style={styles.modalTitle}>Seleccionar Equipo</Text>
+            <ScrollView style={styles.pickerList}>
+              {teams.map((team) => (
+                <TouchableOpacity
+                  key={team.id}
+                  style={styles.pickerItem}
+                  onPress={() => {
+                    if (showTeamPicker === 'home') {
+                      setHomeTeam(team.name);
+                    } else {
+                      setAwayTeam(team.name);
+                    }
+                    setShowTeamPicker(null);
+                  }}
+                >
+                  <Ionicons name="shield" size={24} color="#4CAF50" />
+                  <Text style={styles.pickerItemText}>{team.name}</Text>
+                  <Text style={styles.pickerItemCount}>{team.players.length} jugadores</Text>
+                </TouchableOpacity>
+              ))}
+              {teams.length === 0 && (
+                <View style={styles.emptyPicker}>
+                  <Text style={styles.emptyPickerText}>No hay equipos registrados</Text>
+                  <TouchableOpacity
+                    style={styles.createTeamLink}
+                    onPress={() => {
+                      setShowTeamPicker(null);
+                      setShowNewMatchModal(false);
+                      setScreen('teams');
+                    }}
+                  >
+                    <Text style={styles.createTeamLinkText}>Crear equipos</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 12 }]}
+              onPress={() => setShowTeamPicker(null)}
+            >
+              <Text style={styles.modalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* New Team Modal */}
+      <Modal visible={showNewTeamModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Nuevo Equipo</Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Nombre del equipo"
+              placeholderTextColor="#999"
+              value={newTeamName}
+              onChangeText={setNewTeamName}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => {
+                  setShowNewTeamModal(false);
+                  setNewTeamName('');
+                }}
+              >
+                <Text style={styles.modalButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm]}
+                onPress={createTeam}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Crear</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      
+      {/* New Player Modal */}
+      <Modal visible={showNewPlayerModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Nuevo Jugador</Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Nombre del jugador"
+              placeholderTextColor="#999"
+              value={newPlayerName}
+              onChangeText={setNewPlayerName}
+            />
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Número"
+              placeholderTextColor="#999"
+              value={newPlayerNumber}
+              onChangeText={setNewPlayerNumber}
+              keyboardType="numeric"
+            />
+            
+            <Text style={styles.inputLabel}>Posición</Text>
+            <View style={styles.positionButtons}>
+              {(['goalkeeper', 'defender', 'midfielder', 'forward'] as PlayerPosition[]).map((pos) => (
+                <TouchableOpacity
+                  key={pos}
+                  style={[
+                    styles.positionButton,
+                    newPlayerPosition === pos && { backgroundColor: getPositionColor(pos) }
+                  ]}
+                  onPress={() => setNewPlayerPosition(pos)}
+                >
+                  <Text style={[
+                    styles.positionButtonText,
+                    newPlayerPosition === pos && { color: '#fff' }
+                  ]}>
+                    {getPositionLabel(pos)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => {
+                  setShowNewPlayerModal(false);
+                  setNewPlayerName('');
+                  setNewPlayerNumber('');
+                  setNewPlayerPosition('midfielder');
+                }}
+              >
+                <Text style={styles.modalButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm]}
+                onPress={addPlayer}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Agregar</Text>
                 )}
               </TouchableOpacity>
             </View>
