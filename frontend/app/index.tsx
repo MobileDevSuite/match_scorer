@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -79,6 +79,12 @@ export default function Index() {
   const [playerName, setPlayerName] = useState('');
   const [playerOut, setPlayerOut] = useState('');
   const [playerIn, setPlayerIn] = useState('');
+  
+  // Timer state
+  const [timerMinutes, setTimerMinutes] = useState(0);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchMatches = useCallback(async () => {
     try {
@@ -110,6 +116,74 @@ export default function Index() {
   useEffect(() => {
     fetchMatches();
   }, [fetchMatches]);
+
+  // Timer effect
+  useEffect(() => {
+    if (isTimerRunning) {
+      timerRef.current = setInterval(() => {
+        setTimerSeconds((prevSeconds) => {
+          if (prevSeconds >= 59) {
+            setTimerMinutes((prevMinutes) => prevMinutes + 1);
+            return 0;
+          }
+          return prevSeconds + 1;
+        });
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isTimerRunning]);
+
+  // Auto-control timer based on match status
+  useEffect(() => {
+    if (currentMatch) {
+      if (currentMatch.status === 'first_half' || currentMatch.status === 'second_half') {
+        setIsTimerRunning(true);
+      } else {
+        setIsTimerRunning(false);
+      }
+      
+      // Set initial timer based on status
+      if (currentMatch.status === 'second_half' && timerMinutes < 45) {
+        setTimerMinutes(45);
+        setTimerSeconds(0);
+      }
+    }
+  }, [currentMatch?.status]);
+
+  // Reset timer when changing to a different match
+  useEffect(() => {
+    if (currentMatch) {
+      // Reset timer for new match or based on status
+      if (currentMatch.status === 'not_started') {
+        setTimerMinutes(0);
+        setTimerSeconds(0);
+      }
+    }
+  }, [currentMatch?.id]);
+
+  const toggleTimer = () => {
+    setIsTimerRunning(!isTimerRunning);
+  };
+
+  const resetTimer = (minutes: number = 0) => {
+    setTimerMinutes(minutes);
+    setTimerSeconds(0);
+    setIsTimerRunning(false);
+  };
+
+  const formatTime = (mins: number, secs: number): string => {
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -267,7 +341,8 @@ export default function Index() {
   const openEventModal = (eventType: EventType, team: Team) => {
     setSelectedEventType(eventType);
     setSelectedTeam(team);
-    setEventMinute(currentMatch?.current_minute?.toString() || '0');
+    // Auto-fill with current timer minutes
+    setEventMinute(timerMinutes.toString());
     setPlayerName('');
     setPlayerOut('');
     setPlayerIn('');
@@ -426,6 +501,33 @@ export default function Index() {
           <View style={styles.scoreTeam}>
             <Text style={styles.scoreTeamName} numberOfLines={1}>{currentMatch.away_team}</Text>
             <Text style={styles.scoreValue}>{currentMatch.away_score}</Text>
+          </View>
+        </View>
+        
+        {/* Timer */}
+        <View style={styles.timerContainer}>
+          <TouchableOpacity 
+            style={styles.timerResetButton} 
+            onPress={() => resetTimer(currentMatch.status === 'second_half' ? 45 : 0)}
+          >
+            <Ionicons name="refresh" size={20} color="#888" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.timerDisplay} onPress={toggleTimer}>
+            <Ionicons 
+              name={isTimerRunning ? "pause" : "play"} 
+              size={24} 
+              color={isTimerRunning ? "#4CAF50" : "#fff"} 
+            />
+            <Text style={[styles.timerText, isTimerRunning && styles.timerTextActive]}>
+              {formatTime(timerMinutes, timerSeconds)}
+            </Text>
+          </TouchableOpacity>
+          
+          <View style={styles.timerHint}>
+            <Text style={styles.timerHintText}>
+              {isTimerRunning ? 'Corriendo' : 'Pausado'}
+            </Text>
           </View>
         </View>
         
@@ -981,6 +1083,48 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     marginBottom: 8,
+  },
+  timerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16213e',
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 16,
+  },
+  timerDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f3460',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 10,
+  },
+  timerText: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: 'bold',
+    fontVariant: ['tabular-nums'],
+  },
+  timerTextActive: {
+    color: '#4CAF50',
+  },
+  timerResetButton: {
+    padding: 10,
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+  },
+  timerHint: {
+    alignItems: 'center',
+  },
+  timerHintText: {
+    color: '#888',
+    fontSize: 12,
   },
   statusControls: {
     paddingHorizontal: 16,
