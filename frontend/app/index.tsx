@@ -1470,35 +1470,57 @@ export default function Index() {
           <View style={styles.pickerModalContent}>
             <Text style={styles.modalTitle}>Seleccionar Jugador</Text>
             <ScrollView style={styles.pickerList}>
-              {(selectedTeam === 'home' ? homeTeamPlayers : awayTeamPlayers)
-                .sort((a, b) => a.number - b.number)
-                .map((player) => (
-                  <TouchableOpacity
-                    key={player.id}
-                    style={styles.playerPickerItem}
-                    onPress={() => {
-                      const playerDisplay = `#${player.number} ${player.name}`;
-                      if (showPlayerPicker) {
-                        setPlayerName(playerDisplay);
-                        setShowPlayerPicker(false);
-                      } else if (showPlayerOutPicker) {
-                        setPlayerOut(playerDisplay);
-                        setShowPlayerOutPicker(false);
-                      } else if (showPlayerInPicker) {
-                        setPlayerIn(playerDisplay);
-                        setShowPlayerInPicker(false);
-                      }
-                    }}
-                  >
-                    <View style={[styles.playerPickerNumber, { backgroundColor: getPositionColor(player.position) }]}>
-                      <Text style={styles.playerPickerNumberText}>{player.number}</Text>
+              {(() => {
+                // Get expelled players (red card) for the selected team
+                const expelledPlayers = currentMatch?.events
+                  .filter(e => e.event_type === 'red_card' && e.team === selectedTeam)
+                  .map(e => e.player_name) || [];
+                
+                const teamPlayers = selectedTeam === 'home' ? homeTeamPlayers : awayTeamPlayers;
+                const availablePlayers = teamPlayers.filter(player => {
+                  const playerDisplay = `#${player.number} ${player.name}`;
+                  return !expelledPlayers.includes(playerDisplay);
+                });
+                
+                if (availablePlayers.length === 0 && teamPlayers.length > 0) {
+                  return (
+                    <View style={styles.emptyPicker}>
+                      <Ionicons name="alert-circle" size={32} color="#F44336" />
+                      <Text style={styles.emptyPickerText}>Todos los jugadores han sido expulsados</Text>
                     </View>
-                    <View style={styles.playerPickerInfo}>
-                      <Text style={styles.playerPickerName}>{player.name}</Text>
-                      <Text style={styles.playerPickerPosition}>{getPositionLabel(player.position)}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                  );
+                }
+                
+                return availablePlayers
+                  .sort((a, b) => a.number - b.number)
+                  .map((player) => (
+                    <TouchableOpacity
+                      key={player.id}
+                      style={styles.playerPickerItem}
+                      onPress={() => {
+                        const playerDisplay = `#${player.number} ${player.name}`;
+                        if (showPlayerPicker) {
+                          setPlayerName(playerDisplay);
+                          setShowPlayerPicker(false);
+                        } else if (showPlayerOutPicker) {
+                          setPlayerOut(playerDisplay);
+                          setShowPlayerOutPicker(false);
+                        } else if (showPlayerInPicker) {
+                          setPlayerIn(playerDisplay);
+                          setShowPlayerInPicker(false);
+                        }
+                      }}
+                    >
+                      <View style={[styles.playerPickerNumber, { backgroundColor: getPositionColor(player.position) }]}>
+                        <Text style={styles.playerPickerNumberText}>{player.number}</Text>
+                      </View>
+                      <View style={styles.playerPickerInfo}>
+                        <Text style={styles.playerPickerName}>{player.name}</Text>
+                        <Text style={styles.playerPickerPosition}>{getPositionLabel(player.position)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ));
+              })()}
               {(selectedTeam === 'home' ? homeTeamPlayers : awayTeamPlayers).length === 0 && (
                 <View style={styles.emptyPicker}>
                   <Text style={styles.emptyPickerText}>No hay jugadores registrados para este equipo</Text>

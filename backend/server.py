@@ -205,6 +205,8 @@ async def add_event(match_id: str, event_input: MatchEventCreate):
         update_fields[f"{team_prefix}score"] = match[f"{team_prefix}score"] + 1
     elif event_input.event_type == EventType.PENALTY:
         update_fields[f"{team_prefix}penalties"] = match[f"{team_prefix}penalties"] + 1
+        # Penalties also count as goals in the score
+        update_fields[f"{team_prefix}score"] = match[f"{team_prefix}score"] + 1
     elif event_input.event_type == EventType.CORNER:
         update_fields[f"{team_prefix}corners"] = match[f"{team_prefix}corners"] + 1
     elif event_input.event_type == EventType.SUBSTITUTION:
@@ -250,6 +252,8 @@ async def remove_event(match_id: str, event_id: str):
         update_fields[f"{team_prefix}score"] = max(0, match[f"{team_prefix}score"] - 1)
     elif event_type == "penalty":
         update_fields[f"{team_prefix}penalties"] = max(0, match[f"{team_prefix}penalties"] - 1)
+        # Penalties also count as goals, so subtract from score too
+        update_fields[f"{team_prefix}score"] = max(0, match[f"{team_prefix}score"] - 1)
     elif event_type == "corner":
         update_fields[f"{team_prefix}corners"] = max(0, match[f"{team_prefix}corners"] - 1)
     elif event_type == "substitution":
