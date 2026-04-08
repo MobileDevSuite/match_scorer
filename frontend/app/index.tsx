@@ -1403,30 +1403,42 @@ export default function Index() {
             
             {selectedEventType === 'substitution' ? (
               <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Jugador que sale (opcional)"
-                  placeholderTextColor="#999"
-                  value={playerOut}
-                  onChangeText={setPlayerOut}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Jugador que entra (opcional)"
-                  placeholderTextColor="#999"
-                  value={playerIn}
-                  onChangeText={setPlayerIn}
-                />
+                <Text style={styles.inputLabel}>Jugador que sale:</Text>
+                <TouchableOpacity
+                  style={styles.teamSelector}
+                  onPress={() => setShowPlayerOutPicker(true)}
+                >
+                  <Text style={playerOut ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                    {playerOut || 'Seleccionar jugador'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#888" />
+                </TouchableOpacity>
+                
+                <Text style={styles.inputLabel}>Jugador que entra:</Text>
+                <TouchableOpacity
+                  style={styles.teamSelector}
+                  onPress={() => setShowPlayerInPicker(true)}
+                >
+                  <Text style={playerIn ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                    {playerIn || 'Seleccionar jugador'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#888" />
+                </TouchableOpacity>
               </>
-            ) : (
-              <TextInput
-                style={styles.input}
-                placeholder="Nombre del jugador (opcional)"
-                placeholderTextColor="#999"
-                value={playerName}
-                onChangeText={setPlayerName}
-              />
-            )}
+            ) : selectedEventType !== 'corner' ? (
+              <>
+                <Text style={styles.inputLabel}>Jugador:</Text>
+                <TouchableOpacity
+                  style={styles.teamSelector}
+                  onPress={() => setShowPlayerPicker(true)}
+                >
+                  <Text style={playerName ? styles.teamSelectorText : styles.teamSelectorPlaceholder}>
+                    {playerName || 'Seleccionar jugador'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#888" />
+                </TouchableOpacity>
+              </>
+            ) : null}
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1450,6 +1462,73 @@ export default function Index() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+      
+      {/* Player Picker Modal */}
+      <Modal visible={showPlayerPicker || showPlayerOutPicker || showPlayerInPicker} animationType="slide" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.pickerModalContent}>
+            <Text style={styles.modalTitle}>Seleccionar Jugador</Text>
+            <ScrollView style={styles.pickerList}>
+              {(selectedTeam === 'home' ? homeTeamPlayers : awayTeamPlayers)
+                .sort((a, b) => a.number - b.number)
+                .map((player) => (
+                  <TouchableOpacity
+                    key={player.id}
+                    style={styles.playerPickerItem}
+                    onPress={() => {
+                      const playerDisplay = `#${player.number} ${player.name}`;
+                      if (showPlayerPicker) {
+                        setPlayerName(playerDisplay);
+                        setShowPlayerPicker(false);
+                      } else if (showPlayerOutPicker) {
+                        setPlayerOut(playerDisplay);
+                        setShowPlayerOutPicker(false);
+                      } else if (showPlayerInPicker) {
+                        setPlayerIn(playerDisplay);
+                        setShowPlayerInPicker(false);
+                      }
+                    }}
+                  >
+                    <View style={[styles.playerPickerNumber, { backgroundColor: getPositionColor(player.position) }]}>
+                      <Text style={styles.playerPickerNumberText}>{player.number}</Text>
+                    </View>
+                    <View style={styles.playerPickerInfo}>
+                      <Text style={styles.playerPickerName}>{player.name}</Text>
+                      <Text style={styles.playerPickerPosition}>{getPositionLabel(player.position)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              {(selectedTeam === 'home' ? homeTeamPlayers : awayTeamPlayers).length === 0 && (
+                <View style={styles.emptyPicker}>
+                  <Text style={styles.emptyPickerText}>No hay jugadores registrados para este equipo</Text>
+                  <TouchableOpacity
+                    style={styles.createTeamLink}
+                    onPress={() => {
+                      setShowPlayerPicker(false);
+                      setShowPlayerOutPicker(false);
+                      setShowPlayerInPicker(false);
+                      closeEventModal();
+                      setScreen('teams');
+                    }}
+                  >
+                    <Text style={styles.createTeamLinkText}>Ir a Equipos</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 12 }]}
+              onPress={() => {
+                setShowPlayerPicker(false);
+                setShowPlayerOutPicker(false);
+                setShowPlayerInPicker(false);
+              }}
+            >
+              <Text style={styles.modalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
       
       {loading && (
@@ -1998,8 +2077,10 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     marginRight: 12,
+    marginBottom: 8,
+    marginTop: 8,
   },
   minuteInput: {
     flex: 1,
@@ -2037,5 +2118,212 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Header button
+  headerButton: {
+    padding: 8,
+  },
+  // Team styles
+  teamCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  teamCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  teamCardInfo: {
+    marginLeft: 12,
+  },
+  teamCardName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  teamCardPlayers: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  teamHeader: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    backgroundColor: '#16213e',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  teamHeaderName: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 12,
+  },
+  teamHeaderCount: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  positionSection: {
+    marginBottom: 16,
+  },
+  positionHeader: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  positionTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  playerCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playerNumber: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#0f3460',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playerNumberText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  playerName: {
+    color: '#fff',
+    fontSize: 16,
+    marginLeft: 12,
+  },
+  // Team selector
+  teamSelector: {
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  teamSelectorText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  teamSelectorPlaceholder: {
+    color: '#888',
+    fontSize: 16,
+  },
+  // Picker modal
+  pickerModalContent: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+  },
+  pickerList: {
+    maxHeight: 300,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0f3460',
+    gap: 12,
+  },
+  pickerItemText: {
+    color: '#fff',
+    fontSize: 16,
+    flex: 1,
+  },
+  pickerItemCount: {
+    color: '#888',
+    fontSize: 12,
+  },
+  emptyPicker: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  emptyPickerText: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  createTeamLink: {
+    marginTop: 12,
+  },
+  createTeamLinkText: {
+    color: '#4CAF50',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Position buttons
+  positionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  positionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#0f3460',
+  },
+  positionButtonText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Player picker
+  playerPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0f3460',
+    gap: 12,
+  },
+  playerPickerNumber: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playerPickerNumberText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  playerPickerInfo: {
+    flex: 1,
+  },
+  playerPickerName: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  playerPickerPosition: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
   },
 });
