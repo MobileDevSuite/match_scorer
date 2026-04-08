@@ -903,8 +903,35 @@ export default function Index() {
                       {event.team === 'home' ? currentMatch.home_team : currentMatch.away_team}
                     </Text>
                     <Text style={styles.eventType}>{getEventLabel(event.event_type)}</Text>
-                    {event.player_name && (
+                    {event.player_name && event.event_type !== 'penalty' && (
                       <Text style={styles.eventPlayer}>{event.player_name}</Text>
+                    )}
+                    {event.event_type === 'penalty' && (
+                      <View style={styles.penaltyDetails}>
+                        {event.player_name && (
+                          <Text style={styles.eventPlayer}>{event.player_name}</Text>
+                        )}
+                        {event.penalty_result === 'scored' && (
+                          <View style={styles.penaltyResultTag}>
+                            <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+                            <Text style={[styles.penaltyResultTagText, { color: '#4CAF50' }]}>Anotado</Text>
+                          </View>
+                        )}
+                        {event.penalty_result === 'missed' && (
+                          <View style={styles.penaltyResultTag}>
+                            <Ionicons name="close-circle" size={14} color="#FF9800" />
+                            <Text style={[styles.penaltyResultTagText, { color: '#FF9800' }]}>Fallado</Text>
+                          </View>
+                        )}
+                        {event.penalty_result === 'saved' && (
+                          <View style={styles.penaltyResultTag}>
+                            <Ionicons name="hand-left" size={14} color="#2196F3" />
+                            <Text style={[styles.penaltyResultTagText, { color: '#2196F3' }]}>
+                              Atajado {event.goalkeeper_name ? `por ${event.goalkeeper_name}` : ''}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     )}
                     {event.event_type === 'substitution' && (
                       <Text style={styles.eventPlayer}>
@@ -2522,6 +2549,21 @@ const styles = StyleSheet.create({
   },
   penaltyResultText: {
     color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Penalty details in timeline
+  penaltyDetails: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  penaltyResultTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  penaltyResultTagText: {
     fontSize: 12,
     fontWeight: '600',
   },
